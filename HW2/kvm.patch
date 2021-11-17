@@ -1,0 +1,140 @@
+diff --git a/arch/arm64/include/asm/kvm_asm.h b/arch/arm64/include/asm/kvm_asm.h
+index 44a243754c1b..f219cf777eff 100644
+--- a/arch/arm64/include/asm/kvm_asm.h
++++ b/arch/arm64/include/asm/kvm_asm.h
+@@ -75,6 +75,9 @@ extern void __vgic_v3_init_lrs(void);
+ 
+ extern u32 __kvm_get_mdcr_el2(void);
+ 
++/* hw2 */
++extern unsigned long host_cpuid(void);
++
+ /* Home-grown __this_cpu_{ptr,read} variants that always work at HYP */
+ #define __hyp_this_cpu_ptr(sym)						\
+ 	({								\
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index f656169db8c3..4412dd9f78a1 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -474,6 +474,9 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
+ 		int exception_index);
+ void handle_exit_early(struct kvm_vcpu *vcpu, struct kvm_run *run,
+ 		       int exception_index);
++/* hw2 */
++void handle_exit_late(struct kvm_vcpu *vcpu, struct kvm_run *run,
++		       int exception_index);
+ 
+ int kvm_perf_init(void);
+ int kvm_perf_teardown(void);
+diff --git a/arch/arm64/kvm/handle_exit.c b/arch/arm64/kvm/handle_exit.c
+index 706cca23f0d2..18d301d54856 100644
+--- a/arch/arm64/kvm/handle_exit.c
++++ b/arch/arm64/kvm/handle_exit.c
+@@ -335,3 +335,32 @@ void handle_exit_early(struct kvm_vcpu *vcpu, struct kvm_run *run,
+ 	if (exception_index == ARM_EXCEPTION_EL1_SERROR)
+ 		kvm_handle_guest_serror(vcpu, kvm_vcpu_get_hsr(vcpu));
+ }
++
++/* (hw2) For exit types that need handling before the preemption is disabled */
++void handle_exit_late(struct kvm_vcpu *vcpu, struct kvm_run *run,
++		       int exception_index)
++{
++	exception_index = ARM_EXCEPTION_CODE(exception_index);
++	switch (exception_index) {
++	case ARM_EXCEPTION_TRAP:
++	{
++		exit_handle_fn exit_handler = kvm_get_exit_handler(vcpu);
++		if (exit_handler == handle_hvc)
++		{
++			u32 func_id = vcpu_get_reg(vcpu, 0);
++			u32 val;
++			switch (func_id) {
++				case KVM_HC_HOST_CPUID:
++					val = host_cpuid();
++					break;
++				default:
++					return;
++			}
++			vcpu_set_reg(vcpu, 0, val);
++		}
++		return;
++	}
++	default:
++		return;
++	}
++}
+diff --git a/arch/arm64/kvm/hyp/Makefile b/arch/arm64/kvm/hyp/Makefile
+index ea710f674cb6..1540134d177c 100644
+--- a/arch/arm64/kvm/hyp/Makefile
++++ b/arch/arm64/kvm/hyp/Makefile
+@@ -21,6 +21,9 @@ obj-$(CONFIG_KVM_ARM_HOST) += fpsimd.o
+ obj-$(CONFIG_KVM_ARM_HOST) += tlb.o
+ obj-$(CONFIG_KVM_ARM_HOST) += hyp-entry.o
+ 
++# hw2
++obj-$(CONFIG_KVM_ARM_HOST) += host-cpuid.o
++
+ # KVM code is run at a different exception code with a different map, so
+ # compiler instrumentation that inserts callbacks or checks into the code may
+ # cause crashes. Just disable it.
+diff --git a/arch/arm64/kvm/hyp/host-cpuid.c b/arch/arm64/kvm/hyp/host-cpuid.c
+new file mode 100644
+index 000000000000..d04a1544a888
+--- /dev/null
++++ b/arch/arm64/kvm/hyp/host-cpuid.c
+@@ -0,0 +1,5 @@
++#include <linux/smp.h>
++unsigned long host_cpuid(void) {
++	//return the current pCPU ID of the caller vCPU
++	return smp_processor_id();
++}
+diff --git a/include/uapi/linux/kvm_para.h b/include/uapi/linux/kvm_para.h
+index 8b86609849b9..ab87b3354991 100644
+--- a/include/uapi/linux/kvm_para.h
++++ b/include/uapi/linux/kvm_para.h
+@@ -29,6 +29,8 @@
+ #define KVM_HC_CLOCK_PAIRING		9
+ #define KVM_HC_SEND_IPI		10
+ #define KVM_HC_SCHED_YIELD		11
++/* hw2 */
++#define KVM_HC_HOST_CPUID 12
+ 
+ /*
+  * hypercalls use architecture specific
+diff --git a/virt/kvm/arm/arm.c b/virt/kvm/arm/arm.c
+index 86c6aa1cb58e..1c61028a74af 100644
+--- a/virt/kvm/arm/arm.c
++++ b/virt/kvm/arm/arm.c
+@@ -702,6 +702,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
+ 		 */
+ 		preempt_disable();
+ 
++		/* (hw2) Exit types that need handling after the preemption is disabled */
++		handle_exit_late(vcpu, run, ret);
++
+ 		kvm_pmu_flush_hwstate(vcpu);
+ 
+ 		local_irq_disable();
+@@ -1710,7 +1713,7 @@ int kvm_arch_init(void *opaque)
+ 		kvm_info("VHE mode initialized successfully\n");
+ 	else
+ 		kvm_info("Hyp mode initialized successfully\n");
+-
++	printk("this is my KVM [R09922155]\n");
+ 	return 0;
+ 
+ out_hyp:
+diff --git a/virt/kvm/arm/psci.c b/virt/kvm/arm/psci.c
+index 87927f7e1ee7..9de4e400091d 100644
+--- a/virt/kvm/arm/psci.c
++++ b/virt/kvm/arm/psci.c
+@@ -428,6 +428,9 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
+ 			break;
+ 		}
+ 		break;
++	/* hw2 */
++	case KVM_HC_HOST_CPUID:
++		return ARM_EXCEPTION_TRAP;
+ 	default:
+ 		return kvm_psci_call(vcpu);
+ 	}

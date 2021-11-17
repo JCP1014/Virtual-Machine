@@ -1,0 +1,53 @@
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index f7c561c4dcdd..dd0016ee0367 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -1215,6 +1215,9 @@ asmlinkage long sys_mmap_pgoff(unsigned long addr, unsigned long len,
+ 			unsigned long fd, unsigned long pgoff);
+ asmlinkage long sys_old_mmap(struct mmap_arg_struct __user *arg);
+ 
++/* hw2 */
++asmlinkage unsigned long sys_host_cpuid(void);
++
+ 
+ /*
+  * Not a real system call, but a placeholder for syscalls which are
+diff --git a/include/uapi/asm-generic/unistd.h b/include/uapi/asm-generic/unistd.h
+index 1fc8faa6e973..7ac7fca79b23 100644
+--- a/include/uapi/asm-generic/unistd.h
++++ b/include/uapi/asm-generic/unistd.h
+@@ -851,8 +851,12 @@ __SYSCALL(__NR_pidfd_open, sys_pidfd_open)
+ __SYSCALL(__NR_clone3, sys_clone3)
+ #endif
+ 
++/* hw2 */	
++#define __NR_host_cpuid 436
++__SYSCALL(__NR_host_cpuid, sys_host_cpuid)
++
+ #undef __NR_syscalls
+-#define __NR_syscalls 436
++#define __NR_syscalls 437
+ 
+ /*
+  * 32 bit systems traditionally used different
+diff --git a/kernel/sys.c b/kernel/sys.c
+index a611d1d58c7d..5bcf9e24938c 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -2584,6 +2584,16 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
+ 	return 0;
+ }
+ 
++/* (hw2) Invoke hvc and issue the host_cpuid hypercall */
++SYSCALL_DEFINE0(host_cpuid)
++{
++	register unsigned long cpuid;
++	asm("mov	x0,	#12\n"
++		"hvc	#0\n"
++		"mov	%0,	x0" : "=r" (cpuid) );
++	return cpuid;
++}
++
+ #ifdef CONFIG_COMPAT
+ struct compat_sysinfo {
+ 	s32 uptime;
