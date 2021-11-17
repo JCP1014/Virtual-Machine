@@ -335,3 +335,32 @@ void handle_exit_early(struct kvm_vcpu *vcpu, struct kvm_run *run,
 	if (exception_index == ARM_EXCEPTION_EL1_SERROR)
 		kvm_handle_guest_serror(vcpu, kvm_vcpu_get_hsr(vcpu));
 }
+
+/* (hw2) For exit types that need handling before the preemption is disabled */
+void handle_exit_late(struct kvm_vcpu *vcpu, struct kvm_run *run,
+		       int exception_index)
+{
+	exception_index = ARM_EXCEPTION_CODE(exception_index);
+	switch (exception_index) {
+	case ARM_EXCEPTION_TRAP:
+	{
+		exit_handle_fn exit_handler = kvm_get_exit_handler(vcpu);
+		if (exit_handler == handle_hvc)
+		{
+			u32 func_id = vcpu_get_reg(vcpu, 0);
+			u32 val;
+			switch (func_id) {
+				case KVM_HC_HOST_CPUID:
+					val = host_cpuid();
+					break;
+				default:
+					return;
+			}
+			vcpu_set_reg(vcpu, 0, val);
+		}
+		return;
+	}
+	default:
+		return;
+	}
+}

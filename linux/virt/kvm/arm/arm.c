@@ -702,6 +702,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		 */
 		preempt_disable();
 
+		/* (hw2) Exit types that need handling after the preemption is disabled */
+		handle_exit_late(vcpu, run, ret);
+
 		kvm_pmu_flush_hwstate(vcpu);
 
 		local_irq_disable();

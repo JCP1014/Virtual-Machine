@@ -430,8 +430,7 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		break;
 	/* hw2 */
 	case KVM_HC_HOST_CPUID:
-		val = host_cpuid();
-		break;
+		return ARM_EXCEPTION_TRAP;
 	default:
 		return kvm_psci_call(vcpu);
 	}

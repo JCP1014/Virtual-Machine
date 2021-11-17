@@ -474,6 +474,9 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		int exception_index);
 void handle_exit_early(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		       int exception_index);
+/* hw2 */
+void handle_exit_late(struct kvm_vcpu *vcpu, struct kvm_run *run,
+		       int exception_index);
 
 int kvm_perf_init(void);
 int kvm_perf_teardown(void);
